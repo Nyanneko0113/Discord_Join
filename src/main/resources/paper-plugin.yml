@@ -1,4 +1,4 @@
 name: Discord_Join
 version: '${project.version}'
-main: nyanneko0113.test.discord_join.Discord_Join
+main: org.nyanneko0113.discord_join.Main
 api-version: '1.20'
