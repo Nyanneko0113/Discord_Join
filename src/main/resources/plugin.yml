@@ -1,0 +1,8 @@
+main: org.nyanneko0113.discord_join.Main
+version: '${project.version}'
+name: Discord_Join
+
+commands:
+  discord_whitelist:
+    description: ホワイトリス
+    permission: discord.whitelist

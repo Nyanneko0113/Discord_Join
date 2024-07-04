@@ -5,22 +5,32 @@ import net.dv8tion.jda.api.JDA;
 import net.dv8tion.jda.api.JDABuilder;
 import net.dv8tion.jda.api.Permission;
 import net.dv8tion.jda.api.entities.Member;
+import net.dv8tion.jda.api.entities.User;
+import net.dv8tion.jda.api.entities.channel.concrete.PrivateChannel;
 import net.dv8tion.jda.api.entities.channel.unions.MessageChannelUnion;
 import net.dv8tion.jda.api.events.interaction.command.SlashCommandInteractionEvent;
 import net.dv8tion.jda.api.hooks.EventListener;
 import net.dv8tion.jda.api.hooks.ListenerAdapter;
+import net.dv8tion.jda.api.interactions.commands.Command;
 import net.dv8tion.jda.api.interactions.commands.OptionMapping;
 import net.dv8tion.jda.api.interactions.commands.OptionType;
 import net.dv8tion.jda.api.interactions.commands.build.Commands;
+import net.dv8tion.jda.api.requests.restaction.CacheRestAction;
+import net.dv8tion.jda.api.requests.restaction.CommandListUpdateAction;
+import org.apache.commons.lang3.StringUtils;
 import org.bukkit.Bukkit;
 import org.bukkit.OfflinePlayer;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.scheduler.BukkitTask;
 import org.jetbrains.annotations.NotNull;
 import org.nyanneko0113.discord_join.Main;
+import org.nyanneko0113.discord_join.manager.WhiteListManager;
 
 import javax.security.auth.login.LoginException;
 import java.awt.*;
+import java.io.IOException;
+import java.lang.reflect.Method;
+import java.util.stream.Collectors;
 
 public class DiscordUtil extends ListenerAdapter implements EventListener {
 
@@ -34,15 +44,18 @@ public class DiscordUtil extends ListenerAdapter implements EventListener {
                         .build();
                 jda.awaitReady();
 
-                jda.updateCommands()
-                        .addCommands(Commands.slash("server-join", "サーバーに参加するコマンド")
+                CommandListUpdateAction commands = jda.updateCommands();
+                commands.addCommands(Commands.slash("server-join", "サーバーに参加するコマンド")
                                 .addOption(OptionType.STRING, "mcid", "マイクラのID", false))
                         .addCommands(Commands.slash("whitelist-remove", "ホワイトリストから削除するコマンド")
                                 .addOption(OptionType.STRING, "mcid", "マイクラのID", false))
                         .addCommands(Commands.slash("info", "このBOTの情報"))
+                        .addCommands(Commands.slash("help", "ヘルプコマンド"))
+                        .addCommands(Commands.slash("list", "参加できるユーザー"))
                         .queue();
 
                 Bukkit.getLogger().info("[DiscordUtil] [情報] ボットが起動しました。");
+                Bukkit.getLogger().info("[DiscordUtil] [情報] 利用可能なコマンド：" + commands.complete().stream().map(Command::getName).collect(Collectors.toSet()));
             }
         }
 
@@ -61,6 +74,8 @@ public class DiscordUtil extends ListenerAdapter implements EventListener {
             String sub_cmd = event.getSubcommandName();
             JDA jda = event.getJDA();
             MessageChannelUnion channel = event.getChannel();
+            User user = event.getUser();
+            CacheRestAction<PrivateChannel> private_channel = user.openPrivateChannel();
 
             if ("server-join".equalsIgnoreCase(cmd)) {
                 new BukkitRunnable() {
@@ -71,20 +86,22 @@ public class DiscordUtil extends ListenerAdapter implements EventListener {
                         if (option != null) {
                             OfflinePlayer player = Bukkit.getOfflinePlayer(option.getAsString());
 
-                            player.setWhitelisted(true);
-                            Bukkit.reloadWhitelist();
-                            player.hasPlayedBefore();
+                            try {
+                                WhiteListManager.addPlayer(player.getName());
+                            } catch (IOException e) {
+                                throw new RuntimeException(e);
+                            }
 
                             Bukkit.getLogger().info(player.getName() + "をワイトリストに追加しました");
                             EmbedBuilder embed = new EmbedBuilder();
                             embed.addField("成功", player.getName() + "をホワイトリストに追加しました", false);
                             embed.setColor(Color.GREEN);
-                            channel.sendMessageEmbeds(embed.build()).queue();
+                            event.deferReply(true).addEmbeds(embed.build()).queue();
                         } else {
                             EmbedBuilder embed = new EmbedBuilder();
                             embed.addField("失敗", "名前を入力してください。", false);
                             embed.setColor(Color.RED);
-                            channel.sendMessageEmbeds(embed.build()).queue();
+                            event.deferReply(true).addEmbeds(embed.build()).queue();
                         }
                     }
                 }.runTask(Main.getInstance());
@@ -98,26 +115,43 @@ public class DiscordUtil extends ListenerAdapter implements EventListener {
                             OptionMapping option = event.getOption("mcid");
 
                             OfflinePlayer player = Bukkit.getOfflinePlayer(option.getAsString());
-                            player.setWhitelisted(false);
+                            try {
+                                WhiteListManager.removePlayer(player.getName());
+                            } catch (IOException e) {
+                                throw new RuntimeException(e);
+                            }
                             EmbedBuilder embed = new EmbedBuilder();
                             embed.addField("成功", player.getName() + "をホワイトリストから削除しました", false);
                             embed.setColor(Color.GREEN);
-                            channel.sendMessageEmbeds(embed.build()).queue();
+                            event.deferReply(true).addEmbeds(embed.build()).queue();
                         } else {
                             EmbedBuilder embed = new EmbedBuilder();
                             embed.addField("エラー", "権限がないためこのコマンドは実行できません。", false);
                             embed.setColor(Color.RED);
-                            channel.sendMessageEmbeds(embed.build()).queue();
+                            event.deferReply(true).addEmbeds(embed.build()).queue();
                         }
                     }
                 }.runTask(Main.getInstance());
             }
             else if ("info".equalsIgnoreCase(cmd)) {
                 EmbedBuilder embed = new EmbedBuilder();
-                embed.addField("バージョン", "0.0.1", false);
+                embed.addField("バージョン", "0.0.2", false);
                 embed.addField("制作者", "blockgrass", false);
                 embed.setColor(Color.GREEN);
-                channel.sendMessageEmbeds(embed.build()).queue();
+                event.deferReply().addEmbeds(embed.build()).queue();
+            }
+            else if ("list".equalsIgnoreCase(cmd)) {
+                EmbedBuilder embed = new EmbedBuilder();
+                String list = StringUtils.join(WhiteListManager.getPlayers(), ",");
+                embed.addField("参加できるユーザー", list.replaceFirst(",", ""), false);
+                embed.setColor(Color.GREEN);
+                event.deferReply(true).addEmbeds(embed.build()).queue();
+            }
+            else if ("help".equalsIgnoreCase(cmd)) {
+                EmbedBuilder embed = new EmbedBuilder();
+                embed.addField("/server-join <mcid>", "サーバーに参加するコマンド", false);
+                embed.setColor(Color.GREEN);
+                event.deferReply().addEmbeds(embed.build()).queue();
             }
         }
 }
