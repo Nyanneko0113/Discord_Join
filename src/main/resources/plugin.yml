@@ -4,5 +4,5 @@ name: Discord_Join
 
 commands:
   discord_whitelist:
-    description: ホワイトリス
-    permission: discord.whitelist
+    description: ホワイトリストを設定するコマンド
+    permission: nyanneko0113.discord_join.commands.discord_whitelist

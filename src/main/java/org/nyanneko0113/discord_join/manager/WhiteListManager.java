@@ -67,7 +67,7 @@ public class WhiteListManager {
         }
     }
 
-    private static JsonObject getJson() {
+    public static JsonObject getJson() {
         if (getFile().exists()) {
             StringBuilder file_read = new StringBuilder();
             try (BufferedReader reader = new BufferedReader(new FileReader(getFile()))) {

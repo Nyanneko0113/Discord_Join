@@ -24,12 +24,14 @@ import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.scheduler.BukkitTask;
 import org.jetbrains.annotations.NotNull;
 import org.nyanneko0113.discord_join.Main;
+import org.nyanneko0113.discord_join.manager.VerifyManager;
 import org.nyanneko0113.discord_join.manager.WhiteListManager;
 
 import javax.security.auth.login.LoginException;
 import java.awt.*;
 import java.io.IOException;
 import java.lang.reflect.Method;
+import java.text.NumberFormat;
 import java.util.stream.Collectors;
 
 public class DiscordUtil extends ListenerAdapter implements EventListener {
@@ -46,6 +48,8 @@ public class DiscordUtil extends ListenerAdapter implements EventListener {
 
                 CommandListUpdateAction commands = jda.updateCommands();
                 commands.addCommands(Commands.slash("server-join", "サーバーに参加するコマンド")
+                                .addOption(OptionType.STRING, "code", "認証コード", false))
+                        .addCommands(Commands.slash("whitelist-add", "ホワイトリストを追加するコマンド")
                                 .addOption(OptionType.STRING, "mcid", "マイクラのID", false))
                         .addCommands(Commands.slash("whitelist-remove", "ホワイトリストから削除するコマンド")
                                 .addOption(OptionType.STRING, "mcid", "マイクラのID", false))
@@ -81,25 +85,90 @@ public class DiscordUtil extends ListenerAdapter implements EventListener {
                 new BukkitRunnable() {
                     @Override
                     public void run() {
-                        OptionMapping option = event.getOption("mcid");
+                        OptionMapping option = event.getOption("code");
 
                         if (option != null) {
-                            OfflinePlayer player = Bukkit.getOfflinePlayer(option.getAsString());
-
                             try {
-                                WhiteListManager.addPlayer(player.getName());
-                            } catch (IOException e) {
+                                boolean verify = VerifyManager.removeVerify(option.getAsInt());
+
+                                if (verify) {
+                                    EmbedBuilder embed = new EmbedBuilder();
+                                    embed.addField("成功", "認証に成功しました!サーバーに参加することができます。", false);
+                                    embed.setColor(Color.GREEN);
+                                    event.deferReply(true).addEmbeds(embed.build()).queue();
+                                }
+                                else {
+                                    EmbedBuilder embed = new EmbedBuilder();
+                                    embed.addField("失敗", "認証に失敗しました", false);
+                                    embed.setColor(Color.RED);
+                                    event.deferReply(true).addEmbeds(embed.build()).queue();
+                                }
+                            }
+                            catch (IOException e) {
                                 throw new RuntimeException(e);
                             }
+                            catch (NumberFormatException e) {
+                                EmbedBuilder embed = new EmbedBuilder();
+                                embed.addField("失敗", "数字以外のものを入力されています。", false);
+                                embed.setColor(Color.RED);
+                                event.deferReply(true).addEmbeds(embed.build()).queue();
+                            }
+                        }
+                        else {
+                            try {
+                                EmbedBuilder embed = new EmbedBuilder();
+                                embed.addField("失敗", "コードを入力してください。", false);
+                                embed.setColor(Color.RED);
+                                event.deferReply(true).addEmbeds(embed.build()).queue();
+                            }
+                            catch (NumberFormatException e) {
+                                EmbedBuilder embed = new EmbedBuilder();
+                                embed.addField("失敗", "数字以外のものを入力されています。", false);
+                                embed.setColor(Color.RED);
+                                event.deferReply(true).addEmbeds(embed.build()).queue();
+                            }
 
-                            Bukkit.getLogger().info(player.getName() + "をワイトリストに追加しました");
+                        }
+                    }
+                }.runTask(Main.getInstance());
+            }
+            else if ("whitelist-add".contains(cmd)) {
+                new BukkitRunnable() {
+                    @Override
+                    public void run() {
+                        Member member = event.getMember();
+                        if (member.getPermissions().contains(Permission.ADMINISTRATOR)) {
+                            OptionMapping option = event.getOption("mcid");
+
+                            if (option != null) {
+                                OfflinePlayer player = Bukkit.getOfflinePlayer(option.getAsString());
+
+                                try {
+                                    WhiteListManager.addPlayer(player.getName());
+
+                                    Bukkit.getLogger().info( "[DiscordJoin]" + player.getName() + "をホワイトリストに追加しました（運営による追加）");
+                                    EmbedBuilder embed = new EmbedBuilder();
+                                    embed.addField("成功", player.getName() + "をホワイトリストに追加しました", false);
+                                    embed.setColor(Color.GREEN);
+                                    event.deferReply(true).addEmbeds(embed.build()).queue();
+                                }
+                                catch (Exception e) {
+                                    EmbedBuilder embed = new EmbedBuilder();
+                                    embed.addField("エラーが発生しました", e.toString(), false);
+                                    embed.setColor(Color.RED);
+                                    event.deferReply().addEmbeds(embed.build()).queue();
+                                }
+                            }
+                            else {
+                                EmbedBuilder embed = new EmbedBuilder();
+                                embed.addField("失敗", "名前を入力してください。", false);
+                                embed.setColor(Color.RED);
+                                event.deferReply(true).addEmbeds(embed.build()).queue();
+                            }
+                        }
+                        else {
                             EmbedBuilder embed = new EmbedBuilder();
-                            embed.addField("成功", player.getName() + "をホワイトリストに追加しました", false);
-                            embed.setColor(Color.GREEN);
-                            event.deferReply(true).addEmbeds(embed.build()).queue();
-                        } else {
-                            EmbedBuilder embed = new EmbedBuilder();
-                            embed.addField("失敗", "名前を入力してください。", false);
+                            embed.addField("エラー", "権限がないためこのコマンドは実行できません。", false);
                             embed.setColor(Color.RED);
                             event.deferReply(true).addEmbeds(embed.build()).queue();
                         }
@@ -114,17 +183,32 @@ public class DiscordUtil extends ListenerAdapter implements EventListener {
                         if (member.getPermissions().contains(Permission.ADMINISTRATOR)) {
                             OptionMapping option = event.getOption("mcid");
 
-                            OfflinePlayer player = Bukkit.getOfflinePlayer(option.getAsString());
-                            try {
-                                WhiteListManager.removePlayer(player.getName());
-                            } catch (IOException e) {
-                                throw new RuntimeException(e);
+                            if (option != null) {
+                                OfflinePlayer player = Bukkit.getOfflinePlayer(option.getAsString());
+                                try {
+                                    WhiteListManager.removePlayer(player.getName());
+
+                                    Bukkit.getLogger().info( "[DiscordJoin]" + player.getName() + "をワイトリストから削除しました");
+                                    EmbedBuilder embed = new EmbedBuilder();
+                                    embed.addField("成功", player.getName() + "をホワイトリストから削除しました", false);
+                                    embed.setColor(Color.GREEN);
+                                    event.deferReply(true).addEmbeds(embed.build()).queue();
+                                }
+                                catch (Exception e) {
+                                    EmbedBuilder embed = new EmbedBuilder();
+                                    embed.addField("エラーが発生しました", e.toString(), false);
+                                    embed.setColor(Color.RED);
+                                    event.deferReply().addEmbeds(embed.build()).queue();
+                                }
                             }
-                            EmbedBuilder embed = new EmbedBuilder();
-                            embed.addField("成功", player.getName() + "をホワイトリストから削除しました", false);
-                            embed.setColor(Color.GREEN);
-                            event.deferReply(true).addEmbeds(embed.build()).queue();
-                        } else {
+                            else {
+                                EmbedBuilder embed = new EmbedBuilder();
+                                embed.addField("失敗", "名前を入力してください。", false);
+                                embed.setColor(Color.RED);
+                                event.deferReply(true).addEmbeds(embed.build()).queue();
+                            }
+                        }
+                        else {
                             EmbedBuilder embed = new EmbedBuilder();
                             embed.addField("エラー", "権限がないためこのコマンドは実行できません。", false);
                             embed.setColor(Color.RED);
