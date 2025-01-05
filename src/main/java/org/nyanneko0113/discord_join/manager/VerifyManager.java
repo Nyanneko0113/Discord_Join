@@ -1,5 +1,6 @@
 package org.nyanneko0113.discord_join.manager;
 
+import net.dv8tion.jda.api.entities.User;
 import org.bukkit.Bukkit;
 import org.bukkit.OfflinePlayer;
 import org.bukkit.entity.Player;
@@ -24,23 +25,28 @@ public class VerifyManager {
 
     public static void startVerify(OfflinePlayer player) {
         Date date = new Date();
-        date.setMinutes(date.getMinutes() + 30);
+        date.setMinutes(date.getMinutes() + 10);
 
         verify_list.add(new Verify(player, date));
     }
 
-    public static boolean removeVerify(int code) throws IOException {
+    public static int removeVerify(int code, User user) throws IOException {
         for (Verify verify : verify_list) {
-            Bukkit.getLogger().info(code + ":" + verify.getCode());
             if (verify.getCode() == code) {
-                Bukkit.getLogger().info("[DiscordJoin] " + verify.getPlayer().getName() + "の認証が成功しました");
-                WhiteListManager.addPlayer(verify.getPlayer().getName());
-                verify.stop();
-                verify_list.remove(verify);
-                return true;
+                int white_list = WhiteListManager.addPlayer(verify.getPlayer().getName(), user);
+                if (white_list == 0) {
+                    Bukkit.getLogger().info("[DiscordJoin] " + verify.getPlayer().getName() + "の認証が成功しました");
+
+                    verify.stop();
+                    verify_list.remove(verify);
+                    return 0;
+                }
+                else if (white_list == 1){
+                    return 1; //登録数上限
+                }
             }
         }
-        return false;
+        return 2; //番号が違う
     }
 
     public static Verify getVerify(OfflinePlayer player) {
